@@ -9,20 +9,25 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   TrendingUp,
 } from 'lucide-react';
 import {
   LearningSession,
   ScoreBreakdown,
   TranscriptSegment,
+  UserAiSettings,
   VerificationMode,
 } from '../types';
 import { formatClockTime } from '../utils/srt';
+import { loadAiSettings } from '../utils/storage';
 import { evaluateTranscription } from '../utils/verification';
 import { AudioWaveformPlayer } from './AudioWaveformPlayer';
 
 interface TranscriptionStudioProps {
   session: LearningSession;
+  aiSettings?: UserAiSettings;
+  onOpenAiSettings?: () => void;
   onUpdateSession: (updated: LearningSession) => void;
   onSaveAttempt: (score: ScoreBreakdown, practicedSec: number) => void;
   onOpenSrtModal: () => void;
@@ -30,6 +35,8 @@ interface TranscriptionStudioProps {
 
 export const TranscriptionStudio: React.FC<TranscriptionStudioProps> = ({
   session,
+  aiSettings,
+  onOpenAiSettings,
   onUpdateSession,
   onSaveAttempt,
   onOpenSrtModal,
@@ -141,15 +148,21 @@ export const TranscriptionStudio: React.FC<TranscriptionStudioProps> = ({
     if ((!session.mediaId && !session.youtubeId) || isRetranscribing) return;
     setIsRetranscribing(true);
     setRetranscribeError(null);
+    const activeSettings = aiSettings || loadAiSettings();
     try {
       const resp = await fetch('/api/transcribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeSettings.apiKey ? { 'x-gemini-api-key': activeSettings.apiKey } : {}),
+        },
         body: JSON.stringify({
           mediaId: session.mediaId,
           youtubeId: session.youtubeId,
           durationSeconds: session.durationSeconds,
           language: session.language === 'auto' ? undefined : session.language,
+          model: activeSettings.model,
+          apiKey: activeSettings.apiKey || undefined,
         }),
       });
       const data = (await resp.json()) as {
@@ -467,6 +480,20 @@ export const TranscriptionStudio: React.FC<TranscriptionStudioProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {onOpenAiSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenAiSettings}
+                  title="Impostazioni Modello AI"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 whitespace-nowrap shrink-0 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+                  <span className="font-mono text-[11px]">
+                    {(aiSettings || loadAiSettings()).model}
+                  </span>
+                </button>
+              )}
+
               {(session.mediaId || session.youtubeId) && (
                 <button
                   type="button"

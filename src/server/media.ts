@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -9,7 +10,7 @@ import { Innertube } from 'youtubei.js';
 import type { StreamMode, TranscriptSegment } from '../types';
 import { transcribeYoutubeUrlWithGemini } from './gemini';
 
-export const MEDIA_DIR = '/tmp/ingage-media';
+export const MEDIA_DIR = path.join(os.tmpdir(), 'ingage-media');
 
 if (!fs.existsSync(MEDIA_DIR)) {
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -179,6 +180,18 @@ export async function computeWaveformPeaks(filePath: string, barCount = 120): Pr
   });
 }
 
+function handleFfmpegError(err: unknown, reject: (reason?: any) => void): void {
+  if (typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'ENOENT') {
+    reject(
+      new Error(
+        'FFmpeg non trovato sul sistema. Installa FFmpeg e assicurati che sia presente nel PATH per elaborare file audio e video.'
+      )
+    );
+  } else {
+    reject(err);
+  }
+}
+
 async function transcodeStreamToMp3(inputStream: Readable, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', [
@@ -202,7 +215,7 @@ async function transcodeStreamToMp3(inputStream: Readable, outputPath: string): 
       errLog += d.toString();
     });
 
-    ffmpeg.on('error', (err) => reject(err));
+    ffmpeg.on('error', (err) => handleFfmpegError(err, reject));
     ffmpeg.on('close', (code) => {
       if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
         resolve();
@@ -243,7 +256,7 @@ export async function transcodeFileToMp3(inputPath: string, outputPath: string):
       errLog += d.toString();
     });
 
-    ffmpeg.on('error', (err) => reject(err));
+    ffmpeg.on('error', (err) => handleFfmpegError(err, reject));
     ffmpeg.on('close', (code) => {
       if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
         resolve();
@@ -286,7 +299,7 @@ export async function prepareAudioForGemini(mediaId: string): Promise<{ base64: 
         if (code === 0 && fs.existsSync(geminiPath)) resolve();
         else reject(new Error(errLog || 'Compressione audio per trascrizione fallita.'));
       });
-      ffmpeg.on('error', reject);
+      ffmpeg.on('error', (err) => handleFfmpegError(err, reject));
     });
   }
 
@@ -504,7 +517,8 @@ async function fetchPipedAndOembedFallback(
 export async function extractYoutubeAudio(
   urlOrId: string,
   preferredLang = 'it',
-  youtubeCookie?: string
+  youtubeCookie?: string,
+  aiOptions?: { model?: string; apiKey?: string }
 ): Promise<YoutubeExtractResult> {
   const videoId = parseYoutubeVideoId(urlOrId);
   if (!videoId) {
@@ -696,6 +710,8 @@ export async function extractYoutubeAudio(
         youtubeId: videoId,
         durationSeconds,
         languageHint: preferredLang === 'auto' ? undefined : preferredLang,
+        model: aiOptions?.model,
+        apiKey: aiOptions?.apiKey,
       });
       captions = gemResult.segments;
       captionSource = 'gemini';

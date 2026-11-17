@@ -102,3 +102,24 @@ export interface TranscribeMediaResponse {
   segments: TranscriptSegment[];
   languageDetected?: string;
 }
+
+export type GeminiModelId =
+  | 'gemini-2.5-flash'
+  | 'gemini-2.0-flash'
+  | 'gemini-2.5-pro'
+  | 'gemini-1.5-pro'
+  | 'gemini-1.5-flash';
+
+export interface UserAiSettings {
+  model: GeminiModelId;
+  apiKey: string;
+}
+
+export interface GeminiModelOption {
+  id: GeminiModelId;
+  name: string;
+  tierLabel: string;
+  isFreeTier: boolean;
+  isPro?: boolean;
+  description: string;
+}

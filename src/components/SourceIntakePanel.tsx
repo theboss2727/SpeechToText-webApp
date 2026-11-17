@@ -1,11 +1,13 @@
 import React, { useRef, useState } from 'react';
-import { FileAudio, Link2, Loader2, Upload } from 'lucide-react';
+import { FileAudio, Link2, Loader2, Sparkles, Upload } from 'lucide-react';
 import {
   ExtractMediaResponse,
   TranscribeMediaResponse,
   TranscriptSegment,
+  UserAiSettings,
 } from '../types';
 import { parseSubtitleFile } from '../utils/srt';
+import { loadAiSettings } from '../utils/storage';
 
 interface SourceIntakePanelProps {
   onMediaReady: (payload: {
@@ -13,6 +15,8 @@ interface SourceIntakePanelProps {
     segments: TranscriptSegment[];
     language: string;
   }) => void;
+  aiSettings?: UserAiSettings;
+  onOpenAiSettings?: () => void;
 }
 
 const LANGUAGES = [
@@ -24,7 +28,11 @@ const LANGUAGES = [
   { code: 'auto', label: 'Rilevamento Automatico' },
 ];
 
-export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({ onMediaReady }) => {
+export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
+  onMediaReady,
+  aiSettings,
+  onOpenAiSettings,
+}) => {
   const [sourceTab, setSourceTab] = useState<'youtube' | 'local'>('youtube');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeCookie, setYoutubeCookie] = useState('');
@@ -40,19 +48,28 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({ onMediaRea
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const srtInputRef = useRef<HTMLInputElement | null>(null);
 
+  const activeSettings = aiSettings || loadAiSettings();
+
   const runAiTranscription = async (
     media: ExtractMediaResponse,
     lang: string
   ): Promise<TranscriptSegment[]> => {
-    setStatusStep('Trascrizione audio ad alta precisione e allineamento temporale...');
+    setStatusStep(
+      `Trascrizione audio con ${activeSettings.model} e allineamento temporale...`
+    );
     const resp = await fetch('/api/transcribe', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(activeSettings.apiKey ? { 'x-gemini-api-key': activeSettings.apiKey } : {}),
+      },
       body: JSON.stringify({
         mediaId: media.mediaId,
         youtubeId: media.youtubeId,
         durationSeconds: media.durationSeconds,
         language: lang === 'auto' ? undefined : lang,
+        model: activeSettings.model,
+        apiKey: activeSettings.apiKey || undefined,
       }),
     });
 
@@ -74,11 +91,16 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({ onMediaRea
     try {
       const resp = await fetch('/api/youtube/extract', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeSettings.apiKey ? { 'x-gemini-api-key': activeSettings.apiKey } : {}),
+        },
         body: JSON.stringify({
           url: youtubeUrl.trim(),
           language,
           cookie: youtubeCookie.trim() || undefined,
+          model: activeSettings.model,
+          apiKey: activeSettings.apiKey || undefined,
         }),
       });
 
@@ -203,26 +225,49 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({ onMediaRea
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label
-              htmlFor="ingage-lang-select"
-              className="text-xs font-medium text-slate-600 dark:text-slate-400"
-            >
-              Lingua audio:
-            </label>
-            <select
-              id="ingage-lang-select"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              disabled={isLoading}
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-3">
+            {onOpenAiSettings && (
+              <button
+                type="button"
+                onClick={onOpenAiSettings}
+                title="Configura modello AI e chiave API"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+                <span className="font-semibold">{activeSettings.model}</span>
+                {activeSettings.apiKey ? (
+                  <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    BYOK
+                  </span>
+                ) : (
+                  <span className="rounded bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                    Free
+                  </span>
+                )}
+              </button>
+            )}
+
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="ingage-lang-select"
+                className="text-xs font-medium text-slate-600 dark:text-slate-400"
+              >
+                Lingua:
+              </label>
+              <select
+                id="ingage-lang-select"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={isLoading}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
@@ -17,7 +18,7 @@ import {
 } from './src/server/gemini';
 
 const PORT = Number(process.env.PORT) || 3000;
-const UPLOAD_TMP_DIR = '/tmp/ingage-uploads';
+const UPLOAD_TMP_DIR = path.join(os.tmpdir(), 'ingage-uploads');
 
 if (!fs.existsSync(UPLOAD_TMP_DIR)) {
   fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
@@ -41,17 +42,25 @@ async function startServer() {
   // Extract audio or stream + timed transcript directly from a YouTube URL
   app.post('/api/youtube/extract', async (req, res) => {
     try {
-      const { url, language, cookie } = req.body as {
+      const { url, language, cookie, model, apiKey } = req.body as {
         url?: string;
         language?: string;
         cookie?: string;
+        model?: string;
+        apiKey?: string;
       };
       if (!url || typeof url !== 'string') {
         res.status(400).json({ error: 'Inserisci un URL YouTube valido.' });
         return;
       }
 
-      const result = await extractYoutubeAudio(url, language || 'it', cookie);
+      const effectiveApiKey =
+        apiKey || (req.headers['x-gemini-api-key'] as string | undefined);
+
+      const result = await extractYoutubeAudio(url, language || 'it', cookie, {
+        model,
+        apiKey: effectiveApiKey,
+      });
 
       if (result.streamMode === 'mp3' && result.meta) {
         res.json({
@@ -144,12 +153,17 @@ async function startServer() {
   // Transcribe extracted/uploaded audio file OR direct YouTube URL with Gemini
   app.post('/api/transcribe', async (req, res) => {
     try {
-      const { mediaId, youtubeId, durationSeconds, language } = req.body as {
+      const { mediaId, youtubeId, durationSeconds, language, model, apiKey } = req.body as {
         mediaId?: string;
         youtubeId?: string;
         durationSeconds?: number;
         language?: string;
+        model?: string;
+        apiKey?: string;
       };
+
+      const effectiveApiKey =
+        apiKey || (req.headers['x-gemini-api-key'] as string | undefined);
 
       if (mediaId) {
         const meta = getMediaMeta(mediaId);
@@ -158,6 +172,8 @@ async function startServer() {
           mediaId,
           durationSeconds: effectiveDuration,
           languageHint: language,
+          model,
+          apiKey: effectiveApiKey,
         });
         res.json(result);
         return;
@@ -168,6 +184,8 @@ async function startServer() {
           youtubeId,
           durationSeconds,
           languageHint: language,
+          model,
+          apiKey: effectiveApiKey,
         });
         res.json(result);
         return;

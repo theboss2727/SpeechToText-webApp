@@ -1,11 +1,34 @@
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import type { TranscriptSegment } from '../types';
 import { prepareAudioForGemini } from './media';
 
-function getAiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+export const DEFAULT_AI_MODEL = 'gemini-2.5-flash';
+
+export function resolveModelFallbackList(preferredModel?: string): string[] {
+  const primary = preferredModel?.trim() || DEFAULT_AI_MODEL;
+  const list: string[] = [primary];
+
+  if (primary.includes('pro')) {
+    const proFallbacks = ['gemini-2.5-pro', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    for (const m of proFallbacks) {
+      if (!list.includes(m)) list.push(m);
+    }
+  } else {
+    const flashFallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    for (const m of flashFallbacks) {
+      if (!list.includes(m)) list.push(m);
+    }
+  }
+
+  return list;
+}
+
+function getAiClient(customApiKey?: string): GoogleGenAI {
+  const apiKey = customApiKey?.trim() || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY non configurata sul server. Verifica il pannello Secrets.');
+    throw new Error(
+      'Nessuna GEMINI_API_KEY trovata. Configura GEMINI_API_KEY nel file .env.local oppure inserisci la tua chiave API personale di Google AI Studio nelle Impostazioni AI.'
+    );
   }
   return new GoogleGenAI({
     apiKey,
@@ -36,8 +59,14 @@ async function withRetryAndModelFallback<T>(
         msg.includes('503') ||
         msg.includes('UNAVAILABLE') ||
         msg.includes('high demand') ||
-        msg.includes('429');
+        msg.includes('429') ||
+        msg.includes('not found') ||
+        msg.includes('ResourceExhausted');
       if (!isTransient) {
+        // If it's a specific auth failure, don't keep trying fallback models endlessly
+        if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
+          throw new Error('Chiave Gemini API non valida. Controlla la chiave inserita nelle impostazioni.');
+        }
         throw err;
       }
       await sleep(500);
@@ -75,12 +104,15 @@ export async function transcribeAndSegmentAudio(params: {
   mediaId: string;
   durationSeconds: number;
   languageHint?: string;
+  model?: string;
+  apiKey?: string;
 }): Promise<{
   fullText: string;
   segments: TranscriptSegment[];
 }> {
-  const { mediaId, durationSeconds, languageHint } = params;
-  const ai = getAiClient();
+  const { mediaId, durationSeconds, languageHint, model, apiKey } = params;
+  const ai = getAiClient(apiKey);
+  const models = resolveModelFallbackList(model);
   const audioData = await prepareAudioForGemini(mediaId);
 
   const audioPart = {
@@ -90,20 +122,20 @@ export async function transcribeAndSegmentAudio(params: {
     },
   };
 
-  // Step 1: Verbatim audio transcription with gemini-3.5-transcribe (fallback to gemini-4-hydrogen / gemini-3.1-flash-lite if 503)
+  // Step 1: Verbatim audio transcription
   const transcribePrompt = languageHint
     ? `Transcribe this audio verbatim with accurate punctuation and capitalization. Primary language hint: ${languageHint}. Return only the spoken transcript.`
     : 'Transcribe this audio verbatim with accurate punctuation and capitalization in its original spoken language. Return only the spoken transcript.';
 
   const transcribeResp = await withRetryAndModelFallback(
-    (model) =>
+    (modelName) =>
       ai.models.generateContent({
-        model,
+        model: modelName,
         contents: {
           parts: [audioPart, { text: transcribePrompt }],
         },
       }),
-    ['gemini-3.5-transcribe', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+    models
   );
 
   const fullText = (transcribeResp.text ?? '').trim();
@@ -114,9 +146,9 @@ export async function transcribeAndSegmentAudio(params: {
   // Step 2: Align verbatim transcript into timed SRT subtitle cues
   try {
     const alignResp = await withRetryAndModelFallback(
-      (model) =>
+      (modelName) =>
         ai.models.generateContent({
-          model,
+          model: modelName,
           contents: {
             parts: [
               audioPart,
@@ -129,9 +161,6 @@ export async function transcribeAndSegmentAudio(params: {
             ],
           },
           config: {
-            ...(model === 'gemini-4-hydrogen'
-              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-              : {}),
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.ARRAY,
@@ -156,7 +185,7 @@ export async function transcribeAndSegmentAudio(params: {
             },
           },
         }),
-      ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+      models
     );
 
     const parsed = JSON.parse((alignResp.text ?? '[]').trim()) as Array<{
@@ -197,19 +226,22 @@ export async function transcribeYoutubeUrlWithGemini(params: {
   youtubeId: string;
   durationSeconds?: number;
   languageHint?: string;
+  model?: string;
+  apiKey?: string;
 }): Promise<{
   fullText: string;
   segments: TranscriptSegment[];
 }> {
-  const { youtubeId, durationSeconds = 60, languageHint } = params;
-  const ai = getAiClient();
+  const { youtubeId, durationSeconds = 60, languageHint, model, apiKey } = params;
+  const ai = getAiClient(apiKey);
+  const models = resolveModelFallbackList(model);
   const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
 
   const langNote = languageHint ? ` Primary spoken language hint: ${languageHint}.` : '';
   const response = await withRetryAndModelFallback(
-    (model) =>
+    (modelName) =>
       ai.models.generateContent({
-        model,
+        model: modelName,
         contents: [
           {
             role: 'user',
@@ -228,9 +260,6 @@ export async function transcribeYoutubeUrlWithGemini(params: {
           },
         ],
         config: {
-          ...(model === 'gemini-4-hydrogen'
-            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-            : {}),
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.ARRAY,
@@ -255,7 +284,7 @@ export async function transcribeYoutubeUrlWithGemini(params: {
           },
         },
       }),
-    ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+    models
   );
 
   const parsed = JSON.parse((response.text ?? '[]').trim()) as Array<{

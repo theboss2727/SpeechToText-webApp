@@ -1,0 +1,6 @@
+{
+  "name": "ingage",
+  "description": "Studio audio interattivo per estrarre audio da link YouTube o file locali, trascrivere in tempo reale con evidenziazione in rosso delle discrepanze, punteggio di precisione, esportazione SRT e dashboard progressi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

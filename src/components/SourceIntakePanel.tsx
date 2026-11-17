@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { parseSubtitleFile } from '../utils/srt';
 import { loadAiSettings } from '../utils/storage';
+import { safeJsonFetch } from '../utils/api';
 
 interface SourceIntakePanelProps {
   onMediaReady: (payload: {
@@ -57,7 +58,7 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
     setStatusStep(
       `Trascrizione audio con ${activeSettings.model} e allineamento temporale...`
     );
-    const resp = await fetch('/api/transcribe', {
+    const data = await safeJsonFetch<TranscribeMediaResponse>('/api/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,10 +74,6 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
       }),
     });
 
-    const data = (await resp.json()) as TranscribeMediaResponse & { error?: string };
-    if (!resp.ok) {
-      throw new Error(data.error || 'Errore nella trascrizione audio.');
-    }
     return data.segments;
   };
 
@@ -89,7 +86,7 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
     setStatusStep('Estrazione audio / stream dal link YouTube e preparazione riferimento...');
 
     try {
-      const resp = await fetch('/api/youtube/extract', {
+      const data = await safeJsonFetch<ExtractMediaResponse>('/api/youtube/extract', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -103,11 +100,6 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
           apiKey: activeSettings.apiKey || undefined,
         }),
       });
-
-      const data = (await resp.json()) as ExtractMediaResponse & { error?: string };
-      if (!resp.ok) {
-        throw new Error(data.error || 'Impossibile estrarre l’audio da questo link YouTube.');
-      }
 
       let segments: TranscriptSegment[] = data.captions ?? [];
       if (customSrtSegments && customSrtSegments.length > 0) {
@@ -135,15 +127,10 @@ export const SourceIntakePanel: React.FC<SourceIntakePanelProps> = ({
       const formData = new FormData();
       formData.append('file', file);
 
-      const resp = await fetch('/api/upload/audio', {
+      const data = await safeJsonFetch<ExtractMediaResponse>('/api/upload/audio', {
         method: 'POST',
         body: formData,
       });
-
-      const data = (await resp.json()) as ExtractMediaResponse & { error?: string };
-      if (!resp.ok) {
-        throw new Error(data.error || 'Errore durante la lettura del file locale.');
-      }
 
       let segments: TranscriptSegment[] = [];
       if (customSrtSegments && customSrtSegments.length > 0) {

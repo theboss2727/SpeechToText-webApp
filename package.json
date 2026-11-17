@@ -1,11 +1,11 @@
 {
-  "name": "ingage-translator-webapp",
+  "name": "speech-to-text-webapp",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "node server.ts",
+    "start": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true }); if (fs.existsSync('server.js')) fs.unlinkSync('server.js');\"",
@@ -24,6 +24,7 @@
     "multer": "^2.5.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "tsx": "^4.21.0",
     "vite": "^8.3.0",
     "youtubei.js": "^18.3.0"
   },
@@ -34,7 +35,6 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.21.0",
     "typescript": "^7.0.2"
   }
 }

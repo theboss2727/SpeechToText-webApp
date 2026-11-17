@@ -1,4 +1,4 @@
-# Ingage Translator WebApp
+# SpeechToText WebApp
 
 Studio interattivo per la trascrizione e l'apprendimento delle lingue tramite audio: estrai l'audio da link YouTube o file locali, trascrivi in tempo reale con evidenziazione delle discrepanze, calcolo WPM/accuratezza ed esportazione in formato `.srt`.
 

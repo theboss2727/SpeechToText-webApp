@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { formatClockTime } from '../utils/srt';
 import { loadAiSettings } from '../utils/storage';
+import { safeJsonFetch } from '../utils/api';
 import { evaluateTranscription } from '../utils/verification';
 import { AudioWaveformPlayer } from './AudioWaveformPlayer';
 
@@ -150,7 +151,7 @@ export const TranscriptionStudio: React.FC<TranscriptionStudioProps> = ({
     setRetranscribeError(null);
     const activeSettings = aiSettings || loadAiSettings();
     try {
-      const resp = await fetch('/api/transcribe', {
+      const data = await safeJsonFetch<{ segments: TranscriptSegment[] }>('/api/transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,12 +166,9 @@ export const TranscriptionStudio: React.FC<TranscriptionStudioProps> = ({
           apiKey: activeSettings.apiKey || undefined,
         }),
       });
-      const data = (await resp.json()) as {
-        segments?: TranscriptSegment[];
-        error?: string;
-      };
-      if (!resp.ok || !data.segments) {
-        throw new Error(data.error || 'Impossibile rigenerare la trascrizione.');
+
+      if (!data.segments) {
+        throw new Error('Impossibile rigenerare la trascrizione.');
       }
 
       const evaluation = evaluateTranscription({

@@ -13,6 +13,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { formatClockTime } from '../utils/srt';
+import { safeJsonFetch } from '../utils/api';
 import { ExtractMediaResponse, StreamMode, TranscriptSegment } from '../types';
 
 declare global {
@@ -392,14 +393,10 @@ export const AudioWaveformPlayer: React.FC<AudioWaveformPlayerProps> = ({
           const formData = new FormData();
           formData.append('file', blob, `${title || 'youtube_capture'}.webm`);
 
-          const resp = await fetch('/api/upload/audio', {
+          const data = await safeJsonFetch<ExtractMediaResponse>('/api/upload/audio', {
             method: 'POST',
             body: formData,
           });
-          const data = (await resp.json()) as ExtractMediaResponse & { error?: string };
-          if (!resp.ok) {
-            throw new Error(data.error || 'Conversione MP3 fallita.');
-          }
           onCapturedMp3?.(data);
         } catch (err) {
           setAudioError(err instanceof Error ? err.message : 'Errore conversione MP3.');
